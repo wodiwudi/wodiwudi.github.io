@@ -6,10 +6,38 @@
     <description>Recent content on Darion Zhang</description>
     <generator>Hugo -- gohugo.io</generator>
     <language>zh-CN</language>
-    <lastBuildDate>Sat, 19 Dec 2020 16:44:44 +0800</lastBuildDate>
+    <lastBuildDate>Sat, 19 Dec 2020 23:08:27 +0800</lastBuildDate>
     
 	<atom:link href="https://wodiwudi.github.io/index.xml" rel="self" type="application/rss+xml" />
     
+    
+    <item>
+      <title>Redis持久化功能及配置策略深度解析</title>
+      <link>https://wodiwudi.github.io/post/redis%E6%8C%81%E4%B9%85%E5%8C%96%E5%8A%9F%E8%83%BD%E5%8F%8A%E9%85%8D%E7%BD%AE%E7%AD%96%E7%95%A5%E6%B7%B1%E5%BA%A6%E8%A7%A3%E6%9E%90/</link>
+      <pubDate>Sat, 19 Dec 2020 23:08:27 +0800</pubDate>
+      
+      <guid>https://wodiwudi.github.io/post/redis%E6%8C%81%E4%B9%85%E5%8C%96%E5%8A%9F%E8%83%BD%E5%8F%8A%E9%85%8D%E7%BD%AE%E7%AD%96%E7%95%A5%E6%B7%B1%E5%BA%A6%E8%A7%A3%E6%9E%90/</guid>
+      <description>一、前言
+对于缓存数据库来说，实现数据的持久化，避免从后端数据库中进行恢复，是至关重要的功能，因为我们的服务跪了之后，再重启如果没有数据备份的话所有的数据都需要重新写入，这个过程很耗时，如果有持久化备份的话，重启后直接读备份就可以很快进行服务了。在Redis中主要的两种持久化方式为AOF与RDB，那么这两种持久化方式的原理以及它们的不同点是什么呢？ 为什么要有两种持久化的方式呢？ 以及在配置文件中，如何根据真实业务场景来对这两种持久化方式进行配置呢？下文或许可以解答您的疑惑。
+二、AOF（append only file）原理
+1、AOF长啥样？
+我们知道，在很多应用中都有WAL（write ahead logging）的影子，WAL会在写之前先进行记录，例如数据库的redo log与Prometheus存储的WAL，如下图一为Prometheus存储中的WAL。
+图一 Prometheus的WAL
+而AOF彻底相反，它是Redis先执行命令，然后才进行记录，要解释为何采用写后记录就不得不先说明AOF记录的内容，AOF记录的都是实际的一条一条命令，也就是逻辑日志，Redis 在向 AOF 里面记录日志的时候，为了节省性能，并不会先去对这些命令进行语法检查，换句话说，有可能会记录了很多错误命令，所以先让系统来执行一遍，错误的命令就不会记录上去了，到时候拿AOF恢复数据时就不会出错。
+zhangxiaowei6zhangxiaowei6zhangxiaowei6zhangxiaowei6zhangxiaowei6zhangxiaowei6zhangxiaowei6zhangxiaowei6zhangxiaowei6zhangxiaowei6zhangxiaowei6zhangxiaowei6zhangxiaowei6zhangxiaowei6zhangxiaowei6zhangxiaowei6zhangxiaowei6zhangxiaowei6zhangxiaowei6zhangxiaowei6zhangxiaowei6zhangxiaowei6zhangxiaowei6zhangxiaowei6 如下图二~图四是AOF日志示例。其中图二是redis中日志文件，AOF的默认文件名就是appendonly.aof文件。图三是一个客户端的set命令，图四是AOF日志中存储这个set命令的格式，*3代表有三个部分组成$3代表该部分长度为3。
+图二 默认存储文件
+图三 set命令
+ 图四 AOF文件形式  2、AOF配置项
+由于AOF写记录是在主线程上完成的，那就避免不了一个问题，如果刚执行完一个命令，还没有来得及记日志就宕机了，那么这个命令和相应的数据就有丢失的风险，即是说何时将AOF日志写回磁盘是我们配置AOF持久化功能的讨论重点。
+如图五所示，redis.conf文件中可以看到 appendonly yes设置为yes代表开启AOF日志功能，appendfilename为设置AOF存储文件名，而下面画红框的三行则为AOF日志写回磁盘的三种策略。
+ 图五 AOF策略  Always，同步写回：每个写命令执行完，立马同步地将日志写回磁盘； Everysec，每秒写回：每个写命令执行完，只是先把日志写到 AOF 文件的内存缓冲区，每隔一秒把缓冲区中的内容写入磁盘； No，操作系统控制的写回：每个写命令执行完，只是先把日志写到 AOF 文件的内存缓冲区，由操作系统决定何时将缓冲区内容写回磁盘。 这三种策略其实哪个都不是最优解，Always可以确保高可靠，但是非常影响性能。No相当于把主动权让了出去，是最有风险的方式，但是性能最优。Everysec是这两个折中的策略。所以这时候就要根据使用场景来判断是要高可靠还是要高性能或者允许一点点的数据丢失但是可靠性和性能都较好。
+AOF还有一些其他重要的配置，例如：
+no-appendfsync-on-rewrite yes: # 设置为yes表示rewrite期间对新写操作不fsync,暂时存在内存中,等rewrite完成后再写入，默认为no，建议yes auto-aof-rewrite-percentage 100 #aof文件大小比起上次重写时的大小,增长率100%时重写 默认开启 auto-aof-rewrite-min-size 64mb #aof文件,至少超过64M时,重写 默认开启，可以根据自己Redis实例大小来进行调整 3、AOF重写机制
+AOF除了会带来数据丢失的风险，还有一个风险就是当AOF过大，而假如此时需要用AOF文件进行故障恢复，由于是逻辑日志，恢复速度不会特别快，相当于所有操作逻辑的回放，如果文件太大就会耗时很久，那么此时就会影响到Redis的正常使用
+针对这种情况，Redis提供了AOF重写功能
+其实说白了，就是多变一的功能，如图六所示，Redis 根据数据库的现状创建一个新的 AOF 文件，也就是说，读取数据库中的所有键值对，然后对每一个键值对用一条命令记录它的写入，当一个键值对被多条写命令反复修改时，AOF 文件会记录相应的多条命令。但是，在重写的时候，是根据这个键值对当前的最新状态，为它生成对应的写入命令。这样一来，一个键值对在重写日志中只用一条命令就行了。
+那什么时候会触发AOF重写呢？其实上面提到的auto-aof-rewrite-percentage 和 auto-aof-rewrite-min-size 满足其中一个都会触发AOF重写</description>
+    </item>
     
     <item>
       <title>Test2</title>
